@@ -23,7 +23,7 @@
 .vscode/
 tests/
 
-**/*.mp4
+#**/*.mp4
 **/*.h264
 **/*.caffemodel
 **/*.binaryproto
