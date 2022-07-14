@@ -1701,9 +1701,6 @@ are published to the message broker.",
   // !!!TODO: support >1 input streams!!!
   /* Source element for reading from the file/uri */
   {
-    GstPad *sinkpad, *srcpad;
-    gchar pad_name[16] = { };
-
     source = create_source_bin(0, const_cast<char*>(_input));
     if (!source) {
       g_printerr ("Failed to create source bin. Exiting.\n");
@@ -1711,21 +1708,43 @@ are published to the message broker.",
     }
     gst_bin_add(GST_BIN(pipeline), source);
 
-    g_snprintf (pad_name, 15, "sink_%u", 0);
+    // Add h264 encoder
+    GstElement *rtph264depayer = NULL, *h264parser = NULL, *decoder = NULL;
+
+    rtph264depayer = gst_element_factory_make("rtph264depay", "rtph264-depayer")
+    h264parser = gst_element_factory_make ("h264parse", "h264-parser");
+    decoder = gst_element_factory_make ("nvv4l2decoder", "nvv4l2-decoder");
+
+    if (!rtph264depayer || !h264parser || !decoder) {
+      g_printerr ("One 264 element could not be created. Exiting.\n");
+      return -1;
+    }
+
+    if (!gst_element_link_many (source, rtph264depayer, h264parser, decoder, NULL)) {
+      g_printerr ("Elements could not be linked: 1. Exiting.\n");
+      return -1;
+    }
+
+    // Pad
+    GstPad *sinkpad, *srcpad;
+    gchar pad_name_sink[16] = { };
+    gchar pad_name_src[16] = "src";
+
+    g_snprintf (pad_name_sink, 15, "sink_%u", 0);
     sinkpad = gst_element_get_request_pad(streammux_pgie, pad_name);
     if (!sinkpad) {
       g_printerr ("Source Streammux request sink pad failed. Exiting.\n");
       return -1;
     }
 
-    srcpad = gst_element_get_static_pad(source, "src");
+    srcpad = gst_element_get_static_pad(decoder, pad_name_src);
     if (!srcpad) {
-      g_printerr ("Failed to get src pad of source bin. Exiting.\n");
+      g_printerr ("Decoder request src pad failed. Exiting.\n");
       return -1;
     }
 
     if (gst_pad_link(srcpad, sinkpad) != GST_PAD_LINK_OK) {
-      g_printerr ("Failed to link source bin to stream muxer. Exiting.\n");
+      g_printerr ("Failed to link decoder to stream muxer. Exiting.\n");
       return -1;
     }
 
@@ -1937,8 +1956,21 @@ are published to the message broker.",
     // g_object_set(G_OBJECT(filesink), "control-rate", 0, NULL);//hevc
   }
   else {
-    //filesink = gst_element_factory_make("nveglglessink", "nv-sink");
-    filesink = gst_element_factory_make("fakesink", "fake-sink");
+    g_printerr ("\n\n\nFilesink DEBUG.\n\n\n");
+    filesink = gst_element_factory_make("nveglglessink", "nv-sink");
+    // filesink = gst_element_factory_make("fakesink", "fake-sink");
+    // Mao
+    filesink = gst_element_factory_make("nveglglessink", "nv-sink");
+    g_object_set(G_OBJECT(filesink), "async", false, "sync", false, "max-lateness", 100000, NULL);
+    // Long
+    // filesink = gst_element_factory_make("fakesink", "fake-sink");
+    // filesink = gst_element_factory_make("nvoverlaysink", "nv-sink");
+    // videoconvert = gst_element_factory_make("videoconvert", "video-converter");
+    // filesink = gst_element_factory_make("autovideosink", "nv-sink");
+    filesink = gst_element_factory_make("fpsdisplaysink", "fps-displaysink");
+    g_object_set(G_OBJECT(filesink), "video-sink", "glimagesink", "sync", false, NULL);
+
+    decodebin = gst_element_factory_make("decodebin", "decode-bin");
   }
 
   /* Add all elements to the pipeline */
@@ -1946,7 +1978,7 @@ are published to the message broker.",
   gst_bin_add_many(GST_BIN(pipeline),
     nvvideoconvert_enlarge, capsFilter_enlarge,
     pgie, tracker, sgie, tee,
-    queue_nvvidconv, nvvidconv, nvosd, filesink,
+    queue_nvvidconv, nvvidconv, nvosd, decodebin, filesink,
     nvvideoconvert_reduce, capsFilter_reduce, NULL);
 
   // Link elements
@@ -1982,8 +2014,9 @@ are published to the message broker.",
     }
   }
   else { // dGPU
+    g_printerr ("\n\n\nFilesink link DEBUG.\n\n\n");
     if (!gst_element_link_many(queue_nvvidconv, nvvidconv, nvosd,
-          nvvideoconvert_reduce, capsFilter_reduce,
+          nvvideoconvert_reduce, capsFilter_reduce, decodebin
           filesink, NULL)) {
       g_printerr ("Elements could not be linked. Exiting.\n");
       return -1;
