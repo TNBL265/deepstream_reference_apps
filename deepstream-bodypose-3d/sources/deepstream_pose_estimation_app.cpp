@@ -1711,15 +1711,19 @@ are published to the message broker.",
     // Add h264 encoder
     GstElement *rtph264depayer = NULL, *h264parser = NULL, *decoder = NULL;
 
-    rtph264depayer = gst_element_factory_make("rtph264depay", "rtph264-depayer")
+    rtph264depayer = gst_element_factory_make("rtph264depay", "rtph264-depayer");
     h264parser = gst_element_factory_make ("h264parse", "h264-parser");
-    decoder = gst_element_factory_make ("nvv4l2decoder", "nvv4l2-decoder");
+    // decoder = gst_element_factory_make ("nvv4l2decoder", "nvv4l2-decoder");
+    decoder = gst_element_factory_make ("avdec_h264", "nvv4l2-decoder");
+
 
     if (!rtph264depayer || !h264parser || !decoder) {
       g_printerr ("One 264 element could not be created. Exiting.\n");
       return -1;
     }
 
+    gst_bin_add_many(GST_BIN(pipeline), rtph264depayer, h264parser, decoder, NULL);
+    
     if (!gst_element_link_many (source, rtph264depayer, h264parser, decoder, NULL)) {
       g_printerr ("Elements could not be linked: 1. Exiting.\n");
       return -1;
@@ -1731,7 +1735,7 @@ are published to the message broker.",
     gchar pad_name_src[16] = "src";
 
     g_snprintf (pad_name_sink, 15, "sink_%u", 0);
-    sinkpad = gst_element_get_request_pad(streammux_pgie, pad_name);
+    sinkpad = gst_element_get_request_pad(streammux_pgie, pad_name_sink);
     if (!sinkpad) {
       g_printerr ("Source Streammux request sink pad failed. Exiting.\n");
       return -1;
@@ -1957,20 +1961,19 @@ are published to the message broker.",
   }
   else {
     g_printerr ("\n\n\nFilesink DEBUG.\n\n\n");
-    filesink = gst_element_factory_make("nveglglessink", "nv-sink");
+    // filesink = gst_element_factory_make("nveglglessink", "nv-sink");
     // filesink = gst_element_factory_make("fakesink", "fake-sink");
     // Mao
-    filesink = gst_element_factory_make("nveglglessink", "nv-sink");
-    g_object_set(G_OBJECT(filesink), "async", false, "sync", false, "max-lateness", 100000, NULL);
+    // filesink = gst_element_factory_make("nveglglessink", "nv-sink");
+    // g_object_set(G_OBJECT(filesink), "async", false, "sync", false, "max-lateness", 100000, NULL);
     // Long
     // filesink = gst_element_factory_make("fakesink", "fake-sink");
     // filesink = gst_element_factory_make("nvoverlaysink", "nv-sink");
     // videoconvert = gst_element_factory_make("videoconvert", "video-converter");
-    // filesink = gst_element_factory_make("autovideosink", "nv-sink");
-    filesink = gst_element_factory_make("fpsdisplaysink", "fps-displaysink");
-    g_object_set(G_OBJECT(filesink), "video-sink", "glimagesink", "sync", false, NULL);
-
-    decodebin = gst_element_factory_make("decodebin", "decode-bin");
+    filesink = gst_element_factory_make("fakesink", "nv-sink");
+    // filesink = gst_element_factory_make("fpsdisplaysink", "fps-displaysink");
+    // g_object_set(G_OBJECT(filesink), "video-sink", "glimagesink", "sync", false, NULL);
+    // g_object_set(G_OBJECT(filesink), "codec", 2, NULL);//hevc
   }
 
   /* Add all elements to the pipeline */
@@ -1978,8 +1981,8 @@ are published to the message broker.",
   gst_bin_add_many(GST_BIN(pipeline),
     nvvideoconvert_enlarge, capsFilter_enlarge,
     pgie, tracker, sgie, tee,
-    queue_nvvidconv, nvvidconv, nvosd, decodebin, filesink,
-    nvvideoconvert_reduce, capsFilter_reduce, NULL);
+    queue_nvvidconv, nvvidconv, nvosd,
+    filesink, nvvideoconvert_reduce, capsFilter_reduce, NULL);
 
   // Link elements
   if (!gst_element_link_many(streammux_pgie,
@@ -2016,7 +2019,7 @@ are published to the message broker.",
   else { // dGPU
     g_printerr ("\n\n\nFilesink link DEBUG.\n\n\n");
     if (!gst_element_link_many(queue_nvvidconv, nvvidconv, nvosd,
-          nvvideoconvert_reduce, capsFilter_reduce, decodebin
+          nvvideoconvert_reduce, capsFilter_reduce,
           filesink, NULL)) {
       g_printerr ("Elements could not be linked. Exiting.\n");
       return -1;
